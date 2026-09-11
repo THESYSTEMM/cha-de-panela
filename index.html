@@ -605,7 +605,7 @@
           <h1>Sugestões de presentes</h1>
           <p class="subtitle">Para o nosso chá de panela ♡</p>
           <p class="instructions">
-            Escolha o presente que você pretende nos dar. Assim que confirmar, ele ficará marcado para os próximos convidados e evitamos presentes repetidos.
+            Escolha um presente com carinho para fazer parte do nosso novo começo. Ao confirmar, ele ficará reservado para você e não poderá ser escolhido por outro convidado.
           </p>
 
           <div class="status-row">
@@ -776,6 +776,8 @@
       onSnapshot,
       runTransaction,
       deleteDoc,
+      setDoc,
+      writeBatch,
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -796,6 +798,68 @@
 
     const flatGifts = giftColumns.flat();
     const selections = new Map();
+
+    const DEVICE_SECRET_KEY = "chaPanelaDeviceSecretV1";
+    const OWN_GIFTS_KEY = "chaPanelaOwnedGiftsV1";
+
+    function readCookie(name) {
+      const prefix = `${encodeURIComponent(name)}=`;
+      const item = document.cookie.split("; ").find(part => part.startsWith(prefix));
+      return item ? decodeURIComponent(item.slice(prefix.length)) : null;
+    }
+
+    function writeCookie(name, value) {
+      document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Max-Age=31536000; Path=/; SameSite=Lax; Secure`;
+    }
+
+    function createRandomSecret() {
+      if (crypto?.randomUUID) return crypto.randomUUID();
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function loadDeviceSecret() {
+      let value = null;
+      try { value = localStorage.getItem(DEVICE_SECRET_KEY); } catch (_) {}
+      if (!value) value = readCookie(DEVICE_SECRET_KEY);
+      if (!value) value = createRandomSecret();
+      try { localStorage.setItem(DEVICE_SECRET_KEY, value); } catch (_) {}
+      writeCookie(DEVICE_SECRET_KEY, value);
+      return value;
+    }
+
+    function loadOwnedGifts() {
+      let raw = null;
+      try { raw = localStorage.getItem(OWN_GIFTS_KEY); } catch (_) {}
+      if (!raw) raw = readCookie(OWN_GIFTS_KEY);
+      if (!raw) return new Set();
+      try {
+        const values = JSON.parse(raw);
+        return new Set(Array.isArray(values) ? values : []);
+      } catch (_) {
+        return new Set();
+      }
+    }
+
+    function persistOwnedGifts() {
+      const raw = JSON.stringify(Array.from(ownedGiftIds));
+      try { localStorage.setItem(OWN_GIFTS_KEY, raw); } catch (_) {}
+      writeCookie(OWN_GIFTS_KEY, raw);
+    }
+
+    function rememberOwnedGift(giftId) {
+      ownedGiftIds.add(giftId);
+      persistOwnedGifts();
+    }
+
+    function forgetOwnedGift(giftId) {
+      ownedGiftIds.delete(giftId);
+      persistOwnedGifts();
+    }
+
+    const deviceSecret = loadDeviceSecret();
+    const ownedGiftIds = loadOwnedGifts();
 
     let auth = null;
     let db = null;
@@ -853,7 +917,8 @@
       const giftId = slugify(gift);
       const data = selections.get(giftId);
       if (!data) return "available";
-      return data.uid === currentUser?.uid ? "mine" : "taken";
+      if (data.uid === currentUser?.uid || ownedGiftIds.has(giftId)) return "mine";
+      return "taken";
     }
 
     function renderGifts() {
@@ -925,6 +990,7 @@
 
       const giftId = slugify(gift);
       const giftRef = doc(db, "choices", giftId);
+      const ownershipRef = doc(db, "giftOwnership", giftId, "tokens", deviceSecret);
 
       await runTransaction(db, async (transaction) => {
         const snapshot = await transaction.get(giftRef);
@@ -937,7 +1003,16 @@
           giftId,
           selectedAt: serverTimestamp()
         });
+
+        // Token secreto do navegador. Ele não fica visível na lista pública e
+        // permite recuperar a própria escolha caso o Firebase gere um novo UID.
+        transaction.set(ownershipRef, {
+          uid: currentUser.uid,
+          createdAt: serverTimestamp()
+        });
       });
+
+      rememberOwnedGift(giftId);
     }
 
     async function releaseGift(gift) {
@@ -945,11 +1020,57 @@
 
       const giftId = slugify(gift);
       const data = selections.get(giftId);
-      if (!data || data.uid !== currentUser.uid) {
-        throw new Error("NOT_OWNER");
+      if (!data) throw new Error("NOT_OWNER");
+
+      const giftRef = doc(db, "choices", giftId);
+      const ownershipRef = doc(db, "giftOwnership", giftId, "tokens", deviceSecret);
+      const locallyRemembered = ownedGiftIds.has(giftId);
+
+      // Caminho normal: o UID anônimo continua o mesmo.
+      if (data.uid === currentUser.uid) {
+        if (locallyRemembered) {
+          const batch = writeBatch(db);
+          batch.delete(giftRef);
+          batch.delete(ownershipRef);
+          await batch.commit();
+        } else {
+          // Compatibilidade com presentes escolhidos antes desta correção.
+          await deleteDoc(giftRef);
+        }
+        forgetOwnedGift(giftId);
+        return;
       }
 
-      await deleteDoc(doc(db, "choices", giftId));
+      // Recuperação: alguns navegadores internos de celular podem trocar o UID
+      // anônimo ao reabrir o link. Se este navegador ainda guardar o token
+      // secreto criado no momento da escolha, ele pode liberar somente o item
+      // que realmente foi escolhido neste aparelho.
+      if (!locallyRemembered) throw new Error("NOT_OWNER");
+
+      const claimRef = doc(db, "recoveryClaims", currentUser.uid);
+
+      try {
+        await setDoc(claimRef, {
+          giftId,
+          token: deviceSecret,
+          createdAt: serverTimestamp()
+        });
+
+        const batch = writeBatch(db);
+        batch.delete(giftRef);
+        batch.delete(ownershipRef);
+        batch.delete(claimRef);
+        await batch.commit();
+        forgetOwnedGift(giftId);
+      } catch (error) {
+        try { await deleteDoc(claimRef); } catch (_) {}
+        if (error?.code === "permission-denied") {
+          forgetOwnedGift(giftId);
+          renderGifts();
+          throw new Error("NOT_OWNER");
+        }
+        throw error;
+      }
     }
 
     async function handleConfirm() {

@@ -1131,8 +1131,11 @@
 
           currentUser = user;
 
-          onSnapshot(query(collection(db, "gifts"), orderBy("order")), (snapshot) => {
-            gifts = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+          onSnapshot(collection(db, "gifts"), (snapshot) => {
+            const collator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+            gifts = snapshot.docs
+              .map(item => ({ id: item.id, ...item.data() }))
+              .sort((a, b) => collator.compare(a.name || "", b.name || ""));
             giftsLoaded = true;
             renderGifts();
             updateProgress();

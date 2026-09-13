@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#7f1721" />
+  <title>Painel Administrativo | Chá de Panela</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f6e8d3; --paper:#fffaf1; --wine:#8d1724; --wine-dark:#65111a;
+      --brown:#542818; --ink:#2f2925; --muted:#766c64; --line:rgba(84,40,24,.15);
+      --success:#2f6d4f; --danger:#a12b35; --shadow:0 16px 50px rgba(73,39,23,.12);
+    }
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:"DM Sans",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+    button,input{font:inherit}.shell{width:min(1080px,calc(100% - 28px));margin:0 auto;padding:28px 0 50px}
+    .card{background:rgba(255,250,241,.92);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:24px}
+    h1{font-family:"Great Vibes",cursive;color:var(--brown);font-size:clamp(42px,7vw,64px);font-weight:400;margin:0 0 4px}
+    h2{margin:0 0 10px;color:var(--brown)} p{color:var(--muted)}
+    .login{max-width:480px;margin:7vh auto}.field{display:grid;gap:7px;margin:14px 0}.field label{font-weight:700}.field input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:13px;background:white;outline:none}.field input:focus{border-color:var(--wine)}
+    .btn{border:0;border-radius:13px;padding:12px 17px;font-weight:700;cursor:pointer}.primary{background:var(--wine);color:#fff}.primary:hover{background:var(--wine-dark)}.secondary{background:#eee5d9;color:var(--brown)}.danger{background:#f8e5e6;color:var(--danger)}
+    .full{width:100%}.error{display:none;background:#fde8e8;color:#8a1f2a;padding:11px 13px;border-radius:12px;margin-top:12px}
+    .topbar{display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:18px}.topbar p{margin:0}.actions{display:flex;gap:8px;flex-wrap:wrap}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}.stat{background:#fff;border:1px solid var(--line);border-radius:16px;padding:15px}.stat strong{display:block;font-size:26px;color:var(--wine)}
+    .migration{display:none;margin:16px 0;padding:16px;border:1px dashed rgba(141,23,36,.35);background:#fff7ee;border-radius:16px}.migration strong{color:var(--brown)}
+    .toolbar{display:flex;gap:10px;align-items:center;margin:18px 0}.toolbar input{flex:1;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:#fff}
+    .list{display:grid;gap:10px}.gift{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:15px;padding:12px 14px}.order{font-size:13px;color:var(--muted);font-weight:700}.gift-name{font-weight:700}.meta{font-size:12px;color:var(--muted);margin-top:3px}.gift-actions{display:flex;gap:7px}.gift-actions button{padding:8px 10px;border-radius:10px;border:0;cursor:pointer;font-weight:700}.edit{background:#f2eadf;color:var(--brown)}.delete{background:#fae6e8;color:var(--danger)}
+    .empty{text-align:center;padding:34px;color:var(--muted)}.hidden{display:none!important}.toast{position:fixed;right:18px;bottom:18px;background:#2f2925;color:#fff;padding:12px 16px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:none}
+    dialog{border:0;border-radius:20px;padding:0;box-shadow:0 30px 80px rgba(0,0,0,.25);width:min(480px,calc(100% - 28px))}dialog::backdrop{background:rgba(29,18,13,.5)}.modal{padding:22px}.modal h3{margin:0 0 14px;color:var(--brown)}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+    @media(max-width:700px){.shell{width:min(100% - 18px,1080px);padding-top:14px}.card{padding:17px;border-radius:18px}.topbar{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr 1fr}.gift{grid-template-columns:38px 1fr}.gift-actions{grid-column:2;justify-content:flex-start}.toolbar{flex-direction:column;align-items:stretch}.toolbar .btn{width:100%}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section id="loginView" class="card login">
+      <h1>Administração</h1>
+      <p>Entre com o usuário administrador da lista de presentes.</p>
+      <form id="loginForm">
+        <div class="field"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" required></div>
+        <button class="btn primary full" type="submit">Entrar</button>
+        <div id="loginError" class="error"></div>
+      </form>
+    </section>
+
+    <section id="adminView" class="hidden">
+      <div class="card">
+        <div class="topbar">
+          <div><h2>Painel de presentes</h2><p>Adicione, edite ou remova itens da lista.</p></div>
+          <div class="actions"><a class="btn secondary" href="./" style="text-decoration:none">Ver lista pública</a><button id="logoutBtn" class="btn secondary">Sair</button></div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><strong id="totalCount">0</strong><span>Itens cadastrados</span></div>
+          <div class="stat"><strong id="selectedCount">0</strong><span>Já escolhidos</span></div>
+          <div class="stat"><strong id="availableCount">0</strong><span>Disponíveis</span></div>
+        </div>
+
+        <div id="migrationBox" class="migration">
+          <strong>A lista ainda não foi migrada para o Firestore.</strong>
+          <p>Importe os 68 itens atuais. As escolhas já existentes serão preservadas porque os mesmos identificadores serão mantidos.</p>
+          <button id="migrateBtn" class="btn primary">Importar lista atual</button>
+        </div>
+
+        <div class="toolbar">
+          <input id="search" type="search" placeholder="Pesquisar presente...">
+          <button id="addBtn" class="btn primary">+ Adicionar presente</button>
+        </div>
+
+        <div id="giftList" class="list"></div>
+        <div id="emptyState" class="empty hidden">Nenhum item encontrado.</div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="giftDialog">
+    <form method="dialog" class="modal" id="giftForm">
+      <h3 id="dialogTitle">Adicionar presente</h3>
+      <div class="field"><label for="giftName">Nome do presente</label><input id="giftName" required maxlength="120"></div>
+      <input id="editingId" type="hidden">
+      <div class="modal-actions"><button class="btn secondary" value="cancel" type="button" id="cancelDialog">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    const firebaseConfig = {
+      apiKey: "AIzaSyBW7MSo8bK4ix4kr0-eHS7ezgaL93EBusg",
+      authDomain: "cha-casa-nova-1a488.firebaseapp.com",
+      projectId: "cha-casa-nova-1a488",
+      storageBucket: "cha-casa-nova-1a488.firebasestorage.app",
+      messagingSenderId: "42661283005",
+      appId: "1:42661283005:web:a491bac32fe20f8589a3d4"
+    };
+    const ADMIN_UID = "m4cPVHn1J9Mvdqq2Zh42LjekC342";
+
+    const initialGifts = [
+      "Ferro de passar","Jogos de cama","Toalhas de banho","Toalhas de rosto","Tapete para sala","Escorredor de louça","Jarra","Facas de cozinha","Concha","Escumadeira","Pegador de macarrão","Assadeiras","Formas de bolo","Pegador térmico ou luva","Panos de prato","Lixeira de cozinha","Lixeira de banheiro","Porta sabonete","Porta escovas de dentes","Escova sanitária","Pregadores","Baldes",
+      "Vassoura","Rodo","Pá","Panos de chão","Varal de chão","Extensão ou filtro de linha","Jogos de copo","Escorredor de arroz","Frigideira pequena","Frigideira grande","Tesoura de cozinha","Travessa de vidro pequena","Travessa de vidro grande","Garrafa térmica","Ralador","Funil","Bule","Fruteira de mesa","Jogo de canecas","Tigela redonda de vidro","Toalha de mesa","Tapete de cozinha (passadeira)","Assadeira antiaderente","Forma de pudim",
+      "Travesseiros","Almofadas","Jogos de pote pequeno","Jogo de pote médio","Forma de pizza","Espátula para bolo","Panela de pressão pequena ou grande","Jogo de descanso de panela","Tapete para box","Rodo de pia","Forma de gelo","Copo medidor","Jogo de fronhas","Edredom","Cobertor","Porta-Frios","Queijeira","Leiteira média","Manta de sofá","Micro-ondas","Depurador","Forno a Gás"
+    ];
+
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import { getFirestore, collection, doc, onSnapshot, query, orderBy, writeBatch, serverTimestamp, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+    const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
+    await setPersistence(auth, browserLocalPersistence);
+
+    const $ = id => document.getElementById(id);
+    const loginView=$("loginView"), adminView=$("adminView"), loginForm=$("loginForm"), loginError=$("loginError"), logoutBtn=$("logoutBtn"), migrationBox=$("migrationBox"), migrateBtn=$("migrateBtn"), giftList=$("giftList"), emptyState=$("emptyState"), search=$("search"), addBtn=$("addBtn"), giftDialog=$("giftDialog"), giftForm=$("giftForm"), giftName=$("giftName"), editingId=$("editingId"), dialogTitle=$("dialogTitle"), cancelDialog=$("cancelDialog"), toast=$("toast"), totalCount=$("totalCount"), selectedCount=$("selectedCount"), availableCount=$("availableCount");
+    let gifts=[]; let choices=new Set(); let unsubGifts=null; let unsubChoices=null; let toastTimer=null;
+
+    const slugify = value => value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+    function showToast(msg){clearTimeout(toastTimer);toast.textContent=msg;toast.classList.add("show");toastTimer=setTimeout(()=>toast.classList.remove("show"),3000)}
+    function showLoginError(msg){loginError.textContent=msg;loginError.style.display="block"}
+    function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
+
+    loginForm.addEventListener("submit", async e=>{e.preventDefault();loginError.style.display="none";try{const cred=await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value);if(cred.user.uid!==ADMIN_UID){await signOut(auth);throw new Error("Este usuário não possui permissão de administrador.")}}catch(err){showLoginError(err.message.includes("invalid-credential")?"E-mail ou senha inválidos.":err.message)}});
+    logoutBtn.addEventListener("click",()=>signOut(auth));
+
+    onAuthStateChanged(auth,user=>{
+      if(user && user.uid===ADMIN_UID){loginView.classList.add("hidden");adminView.classList.remove("hidden");startListeners()}
+      else{adminView.classList.add("hidden");loginView.classList.remove("hidden");stopListeners()}
+    });
+
+    function startListeners(){
+      stopListeners();
+      unsubGifts=onSnapshot(query(collection(db,"gifts"),orderBy("order")),snap=>{gifts=snap.docs.map(d=>({id:d.id,...d.data()}));migrationBox.style.display=gifts.length===0?"block":"none";render()});
+      unsubChoices=onSnapshot(collection(db,"choices"),snap=>{choices=new Set(snap.docs.map(d=>d.id));render()});
+    }
+    function stopListeners(){if(unsubGifts){unsubGifts();unsubGifts=null}if(unsubChoices){unsubChoices();unsubChoices=null}}
+
+    function render(){
+      const term=search.value.trim().toLowerCase(); const filtered=gifts.filter(g=>(g.name||"").toLowerCase().includes(term));
+      totalCount.textContent=gifts.length; const selected=gifts.filter(g=>choices.has(g.id)).length; selectedCount.textContent=selected; availableCount.textContent=Math.max(0,gifts.length-selected);
+      giftList.innerHTML=filtered.map((g,i)=>`<div class="gift"><div class="order">#${String(g.order??i+1).padStart(2,"0")}</div><div><div class="gift-name">${escapeHtml(g.name)}</div><div class="meta">${choices.has(g.id)?"✓ Já escolhido":"Disponível"}</div></div><div class="gift-actions"><button class="edit" data-edit="${g.id}">Editar</button><button class="delete" data-delete="${g.id}">Excluir</button></div></div>`).join("");
+      emptyState.classList.toggle("hidden", filtered.length>0 || gifts.length===0);
+      giftList.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));
+      giftList.querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>removeGift(b.dataset.delete));
+    }
+    search.addEventListener("input",render);
+
+    migrateBtn.addEventListener("click", async()=>{
+      if(gifts.length){showToast("A lista já foi importada.");return}
+      if(!confirm(`Importar os ${initialGifts.length} itens atuais para o Firestore?`)) return;
+      migrateBtn.disabled=true; migrateBtn.textContent="Importando...";
+      try{const batch=writeBatch(db);initialGifts.forEach((name,index)=>{const id=slugify(name);batch.set(doc(db,"gifts",id),{name,order:index+1,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})});await batch.commit();showToast("Lista importada com sucesso.")}
+      catch(e){alert("Não foi possível importar: "+e.message)}finally{migrateBtn.disabled=false;migrateBtn.textContent="Importar lista atual"}
+    });
+
+    addBtn.addEventListener("click",()=>{editingId.value="";giftName.value="";dialogTitle.textContent="Adicionar presente";giftDialog.showModal();setTimeout(()=>giftName.focus(),50)});
+    cancelDialog.addEventListener("click",()=>giftDialog.close());
+    function openEdit(id){const g=gifts.find(x=>x.id===id);if(!g)return;editingId.value=id;giftName.value=g.name||"";dialogTitle.textContent="Editar presente";giftDialog.showModal();setTimeout(()=>giftName.focus(),50)}
+    giftForm.addEventListener("submit", async e=>{e.preventDefault();const name=giftName.value.trim();if(!name)return;try{if(editingId.value){await updateDoc(doc(db,"gifts",editingId.value),{name,updatedAt:serverTimestamp()});showToast("Presente atualizado.")}else{const maxOrder=gifts.reduce((m,g)=>Math.max(m,Number(g.order)||0),0);await addDoc(collection(db,"gifts"),{name,order:maxOrder+1,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});showToast("Presente adicionado.")}giftDialog.close()}catch(err){alert("Erro ao salvar: "+err.message)}});
+    async function removeGift(id){const g=gifts.find(x=>x.id===id);if(!g)return;const selected=choices.has(id);const msg=selected?`“${g.name}” já foi escolhido. Ao excluir, ele deixará de aparecer na lista pública. Deseja continuar?`:`Excluir “${g.name}” da lista?`;if(!confirm(msg))return;try{await deleteDoc(doc(db,"gifts",id));showToast("Presente excluído.")}catch(err){alert("Erro ao excluir: "+err.message)}}
+  </script>
+</body>
+</html>

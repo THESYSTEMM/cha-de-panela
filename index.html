@@ -719,84 +719,9 @@
 
     // ============================================================
     // LISTA DE PRESENTES
-    // Você pode alterar nomes, ordem e itens diretamente aqui.
+    // A lista agora é carregada em tempo real da coleção "gifts"
+    // do Firestore e administrada pelo painel admin.html.
     // ============================================================
-    const giftColumns = [
-      [
-        "Ferro de passar",
-        "Jogos de cama",
-        "Toalhas de banho",
-        "Toalhas de rosto",
-        "Tapete para sala",
-        "Escorredor de louça",
-        "Jarra",
-        "Facas de cozinha",
-        "Concha",
-        "Escumadeira",
-        "Pegador de macarrão",
-        "Assadeiras",
-        "Formas de bolo",
-        "Pegador térmico ou luva",
-        "Panos de prato",
-        "Lixeira de cozinha",
-        "Lixeira de banheiro",
-        "Porta sabonete",
-        "Porta escovas de dentes",
-        "Escova sanitária",
-        "Pregadores",
-        "Baldes"
-      ],
-      [
-        "Vassoura",
-        "Rodo",
-        "Pá",
-        "Panos de chão",
-        "Varal de chão",
-        "Extensão ou filtro de linha",
-        "Jogos de copo",
-        "Escorredor de arroz",
-        "Frigideira pequena",
-        "Frigideira grande",
-        "Tesoura de cozinha",
-        "Travessa de vidro pequena",
-        "Travessa de vidro grande",
-        "Garrafa térmica",
-        "Ralador",
-        "Funil",
-        "Bule",
-        "Fruteira de mesa",
-        "Jogo de canecas",
-        "Tigela redonda de vidro",
-        "Toalha de mesa",
-        "Tapete de cozinha (passadeira)",
-        "Assadeira antiaderente",
-        "Forma de pudim"
-      ],
-      [
-        "Travesseiros",
-        "Almofadas",
-        "Jogos de pote pequeno",
-        "Jogo de pote médio",
-        "Forma de pizza",
-        "Espátula para bolo",
-        "Panela de pressão pequena ou grande",
-        "Jogo de descanso de panela",
-        "Tapete para box",
-        "Rodo de pia",
-        "Forma de gelo",
-        "Copo medidor",
-        "Jogo de fronhas",
-        "Edredom",
-        "Cobertor",
-        "Porta-Frios",
-        "Queijeira",
-        "Leiteira média",
-        "Manta de sofá",
-        "Micro-ondas",
-        "Depurador",
-        "Forno a Gás"
-      ]
-    ];
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
     import {
@@ -811,6 +736,8 @@
       collection,
       doc,
       onSnapshot,
+      query,
+      orderBy,
       runTransaction,
       deleteDoc,
       setDoc,
@@ -833,8 +760,10 @@
     const confirmBtn = document.getElementById("confirmBtn");
     const toast = document.getElementById("toast");
 
-    const flatGifts = giftColumns.flat();
+    let gifts = [];
     const selections = new Map();
+    let giftsLoaded = false;
+    let choicesLoaded = false;
 
     const DEVICE_SECRET_KEY = "chaPanelaDeviceSecretV1";
     const OWN_GIFTS_KEY = "chaPanelaOwnedGiftsV1";
@@ -904,13 +833,6 @@
     let currentAction = null;
     let toastTimer = null;
 
-    const slugify = (value) => value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-
     function showToast(message) {
       clearTimeout(toastTimer);
       toast.textContent = message;
@@ -934,7 +856,7 @@
       currentAction = { type: "choose", gift };
       modalTitle.textContent = "Confirmar presente";
       modalText.textContent = "Deseja reservar este item como o presente que você vai dar?";
-      modalGiftName.textContent = gift;
+      modalGiftName.textContent = gift.name;
       confirmBtn.textContent = "Confirmar escolha";
       confirmBtn.className = "btn primary";
       overlay.classList.add("open");
@@ -944,35 +866,53 @@
       currentAction = { type: "release", gift };
       modalTitle.textContent = "Desfazer sua escolha";
       modalText.textContent = "Este presente está marcado como sua escolha. Deseja liberá-lo novamente?";
-      modalGiftName.textContent = gift;
+      modalGiftName.textContent = gift.name;
       confirmBtn.textContent = "Liberar presente";
       confirmBtn.className = "btn danger";
       overlay.classList.add("open");
     }
 
     function giftState(gift) {
-      const giftId = slugify(gift);
-      const data = selections.get(giftId);
+      const data = selections.get(gift.id);
       if (!data) return "available";
-      if (data.uid === currentUser?.uid || ownedGiftIds.has(giftId)) return "mine";
+      if (data.uid === currentUser?.uid || ownedGiftIds.has(gift.id)) return "mine";
       return "taken";
     }
 
+    function splitIntoColumns(items, count = 3) {
+      const columns = Array.from({ length: count }, () => []);
+      if (!items.length) return columns;
+
+      // Mantém a leitura vertical semelhante à arte original, distribuindo
+      // quantidades quase iguais entre as colunas.
+      const base = Math.floor(items.length / count);
+      const remainder = items.length % count;
+      let cursor = 0;
+
+      for (let i = 0; i < count; i++) {
+        const size = base + (i < remainder ? 1 : 0);
+        columns[i] = items.slice(cursor, cursor + size);
+        cursor += size;
+      }
+      return columns;
+    }
+
     function renderGifts() {
-      const query = searchInput.value.trim().toLocaleLowerCase("pt-BR");
+      const queryText = searchInput.value.trim().toLocaleLowerCase("pt-BR");
       giftGrid.innerHTML = "";
 
-      const filteredColumns = giftColumns.map(col => col.filter(gift =>
-        gift.toLocaleLowerCase("pt-BR").includes(query)
-      ));
+      const filtered = gifts.filter(gift =>
+        (gift.name || "").toLocaleLowerCase("pt-BR").includes(queryText)
+      );
 
-      const visibleCount = filteredColumns.reduce((sum, col) => sum + col.length, 0);
-      if (!visibleCount) {
-        giftGrid.innerHTML = `<div class="empty-state">Nenhum presente encontrado para essa busca.</div>`;
+      if (!filtered.length) {
+        giftGrid.innerHTML = `<div class="empty-state">${gifts.length ? "Nenhum presente encontrado para essa busca." : "Nenhum presente cadastrado no momento."}</div>`;
         return;
       }
 
-      filteredColumns.forEach((columnGifts) => {
+      const columns = splitIntoColumns(filtered, 3);
+
+      columns.forEach((columnGifts) => {
         if (!columnGifts.length) return;
         const column = document.createElement("div");
         column.className = "column";
@@ -982,7 +922,7 @@
           const button = document.createElement("button");
           button.type = "button";
           button.className = `gift ${state === "taken" ? "taken" : ""} ${state === "mine" ? "mine" : ""}`.trim();
-          button.dataset.gift = gift;
+          button.dataset.giftId = gift.id;
 
           let badge = "Disponível";
           if (state === "taken") badge = "Já escolhido";
@@ -993,16 +933,16 @@
             <span class="gift-name"></span>
             <span class="badge">${badge}</span>
           `;
-          button.querySelector(".gift-name").textContent = gift;
+          button.querySelector(".gift-name").textContent = gift.name;
 
           if (state === "taken") {
             button.disabled = true;
-            button.setAttribute("aria-label", `${gift}: já escolhido por outro convidado`);
+            button.setAttribute("aria-label", `${gift.name}: já escolhido por outro convidado`);
           } else if (state === "mine") {
-            button.setAttribute("aria-label", `${gift}: sua escolha. Toque para liberar`);
+            button.setAttribute("aria-label", `${gift.name}: sua escolha. Toque para liberar`);
             button.addEventListener("click", () => openReleaseModal(gift));
           } else {
-            button.setAttribute("aria-label", `${gift}: disponível. Toque para escolher`);
+            button.setAttribute("aria-label", `${gift.name}: disponível. Toque para escolher`);
             button.addEventListener("click", () => openChooseModal(gift));
           }
 
@@ -1014,18 +954,26 @@
     }
 
     function updateProgress() {
-      const selectedTotal = flatGifts.reduce((count, gift) => count + (selections.has(slugify(gift)) ? 1 : 0), 0);
-      const total = flatGifts.length;
+      const selectedTotal = gifts.reduce((count, gift) => count + (selections.has(gift.id) ? 1 : 0), 0);
+      const total = gifts.length;
       const percent = total ? Math.round((selectedTotal / total) * 100) : 0;
       counterText.textContent = `${selectedTotal} de ${total} presentes já escolhidos`;
       progressPercent.textContent = `${percent}%`;
       progressBar.style.width = `${percent}%`;
     }
 
+    function finishInitialLoadIfReady() {
+      if (giftsLoaded && choicesLoaded) {
+        renderGifts();
+        updateProgress();
+        loadingScreen.classList.add("hidden");
+      }
+    }
+
     async function chooseGift(gift) {
       if (!currentUser || !db) throw new Error("Usuário ainda não autenticado.");
 
-      const giftId = slugify(gift);
+      const giftId = gift.id;
       const giftRef = doc(db, "choices", giftId);
       const ownershipRef = doc(db, "giftOwnership", giftId, "tokens", deviceSecret);
 
@@ -1055,7 +1003,7 @@
     async function releaseGift(gift) {
       if (!currentUser || !db) throw new Error("Usuário ainda não autenticado.");
 
-      const giftId = slugify(gift);
+      const giftId = gift.id;
       const data = selections.get(giftId);
       if (!data) throw new Error("NOT_OWNER");
 
@@ -1148,8 +1096,9 @@
     }
 
     async function start() {
-      renderGifts();
-      updateProgress();
+      counterText.textContent = "Carregando lista de presentes...";
+      progressPercent.textContent = "";
+      progressBar.style.width = "0%";
 
       if (!firebaseIsConfigured()) {
         loadingScreen.classList.add("hidden");
@@ -1182,17 +1131,32 @@
 
           currentUser = user;
 
-          onSnapshot(collection(db, "choices"), (snapshot) => {
-            selections.clear();
-            snapshot.forEach((item) => selections.set(item.id, item.data()));
+          onSnapshot(query(collection(db, "gifts"), orderBy("order")), (snapshot) => {
+            gifts = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+            giftsLoaded = true;
             renderGifts();
             updateProgress();
-            loadingScreen.classList.add("hidden");
+            finishInitialLoadIfReady();
           }, (error) => {
             console.error(error);
             loadingScreen.classList.add("hidden");
             showConfigError(
-              "Não foi possível ler o Firestore. Verifique se o banco foi criado e se as regras de segurança foram publicadas."
+              "Não foi possível carregar a lista de presentes. Verifique a coleção <b>gifts</b> e as regras do Firestore."
+            );
+          });
+
+          onSnapshot(collection(db, "choices"), (snapshot) => {
+            selections.clear();
+            snapshot.forEach((item) => selections.set(item.id, item.data()));
+            choicesLoaded = true;
+            renderGifts();
+            updateProgress();
+            finishInitialLoadIfReady();
+          }, (error) => {
+            console.error(error);
+            loadingScreen.classList.add("hidden");
+            showConfigError(
+              "Não foi possível ler as escolhas do Firestore. Verifique se as regras de segurança foram publicadas."
             );
           });
         });
